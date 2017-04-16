@@ -1,0 +1,109 @@
+ARDUINO_PACKAGE_BASE = ~/.arduino15/packages/esp8266
+ARDUINO_ESP_VERSION = 2.3.0
+ARDUINO_TOOLS_BIN = $(ARDUINO_PACKAGE_BASE)/tools/xtensa-lx106-elf-gcc/1.20.0-26-gb404fb9-2/bin
+ESPTOOL2 = ../esptool2/esptool2
+
+SRCS = main.cpp rboot-bigflash.c
+HEADERS = rboot.h
+LIBS = m gcc hal phy pp net80211 wpa crypto main2 wps \
+		axtls smartconfig mesh wpa2 lwip_gcc stdc++
+
+ARDUINO_CORES_BASE = $(ARDUINO_PACKAGE_BASE)/hardware/esp8266/$(ARDUINO_ESP_VERSION)/cores/esp8266
+ARDUINO_VARIANT_BASE = $(ARDUINO_PACKAGE_BASE)/hardware/esp8266/$(ARDUINO_ESP_VERSION)/variants/nodemcu
+
+CC = $(ARDUINO_TOOLS_BIN)/xtensa-lx106-elf-gcc
+CXX = $(ARDUINO_TOOLS_BIN)/xtensa-lx106-elf-g++
+AR = $(ARDUINO_TOOLS_BIN)/xtensa-lx106-elf-ar
+
+CFLAGS = -D__ets__ -DICACHE_FLASH -U__STRICT_ANSI__ -g -w -Os -Wl,-EL\
+			-Wpointer-arith  -Wno-implicit-function-declaration -fno-inline-functions \
+			-nostdlib -mlongcalls -mtext-section-literals -falign-functions=4 \
+			-MMD -std=gnu99 -ffunction-sections -fdata-sections \
+			-DF_CPU=80000000L -DLWIP_OPEN_SRC -DARDUINO=10802 -DARDUINO_ESP8266_NODEMCU \
+			-DARDUINO_ARCH_ESP8266 -DARDUINO_BOARD="ESP8266_NODEMCU" -DESP8266
+
+CXXFLAGS =  -D__ets__ -DICACHE_FLASH -U__STRICT_ANSI__ \
+			 -c -w -Os -g -mlongcalls -mtext-section-literals -fno-exceptions \
+			 -fno-rtti -falign-functions=4 -std=c++11 -MMD -ffunction-sections -fdata-sections \
+			 -DF_CPU=80000000L -DLWIP_OPEN_SRC  \
+			 -DARDUINO=10802 -DARDUINO_ESP8266_NODEMCU -DARDUINO_ARCH_ESP8266 \
+			 -DARDUINO_BOARD="ESP8266_NODEMCU"  -DESP8266
+
+ASMFLAGS = -D__ets__ -DICACHE_FLASH -U__STRICT_ANSI__ -c -g -x assembler-with-cpp \
+			-Wl,-EL -MMD -mlongcalls -DF_CPU=80000000L -DLWIP_OPEN_SRC -DARDUINO=10802 \
+			-DARDUINO_ESP8266_NODEMCU -DARDUINO_ARCH_ESP8266 \
+			-DARDUINO_BOARD="ESP8266_NODEMCU" -DESP8266
+
+INCLUDES = $(ARDUINO_PACKAGE_BASE)/hardware/esp8266/2.3.0/tools/sdk/include \
+			$(ARDUINO_PACKAGE_BASE)/hardware/esp8266/2.3.0/tools/sdk/lwip/include \
+			$(ARDUINO_PACKAGE_BASE)/hardware/esp8266/2.3.0/cores/esp8266 \
+			$(ARDUINO_PACKAGE_BASE)/hardware/esp8266/2.3.0/variants/nodemcu
+
+INCLUDE_ARGS = $(addprefix -I ,$(INCLUDES))
+
+ARDUINO_OBJS = cont.S.o cont_util.c.o core_esp8266_eboot_command.c.o \
+		core_esp8266_flash_utils.c.o core_esp8266_i2s.c.o core_esp8266_noniso.c.o \
+		core_esp8266_phy.c.o core_esp8266_postmortem.c.o core_esp8266_si2c.c.o \
+		core_esp8266_timer.c.o core_esp8266_wiring.c.o core_esp8266_wiring_analog.c.o \
+		core_esp8266_wiring_digital.c.o core_esp8266_wiring_pulse.c.o core_esp8266_wiring_pwm.c.o \
+		core_esp8266_wiring_shift.c.o heap.c.o libc_replacements.c.o time.c.o \
+		uart.c.o libb64/cdecode.c.o libb64/cencode.c.o spiffs/spiffs_cache.c.o \
+		spiffs/spiffs_check.c.o spiffs/spiffs_gc.c.o spiffs/spiffs_hydrogen.c.o \
+		spiffs/spiffs_nucleus.c.o umm_malloc/umm_malloc.c.o Esp.cpp.o FS.cpp.o \
+		HardwareSerial.cpp.o IPAddress.cpp.o MD5Builder.cpp.o Print.cpp.o Schedule.cpp.o \
+		Stream.cpp.o StreamString.cpp.o Tone.cpp.o Updater.cpp.o WMath.cpp.o WString.cpp.o \
+		abi.cpp.o base64.cpp.o cbuf.cpp.o core_esp8266_main.cpp.o debug.cpp.o pgmspace.cpp.o \
+		spiffs_api.cpp.o spiffs_hal.cpp.o
+
+ARDUINO_BUILD_OBJS = $(addprefix build/arduino/,$(ARDUINO_OBJS))
+
+LDFLAGS = -g -w -Os -nostdlib -Wl,--no-check-sections -u call_user_start -Wl,-static \
+		-Wl,--gc-sections -Wl,-wrap,system_restart_local -Wl,-wrap,register_chipv6_phy
+
+LIBDIRS = $(ARDUINO_PACKAGE_BASE)/hardware/esp8266/$(ARDUINO_ESP_VERSION)/tools/sdk/lib \
+			$(ARDUINO_PACKAGE_BASE)/hardware/esp8266/$(ARDUINO_ESP_VERSION)/tools/sdk/ld
+LIBDIR_ARGS = $(addprefix -L ,$(LIBDIRS))
+LIB_ARGS = $(addprefix -l,$(LIBS))
+
+
+OBJS = $(addprefix build/,$(addsuffix .o,$(SRCS)))
+
+
+all: build/arduino.ar build/rom.bin
+
+
+build/arduino/%.S.o: $(ARDUINO_CORES_BASE)/%.S
+	mkdir -p $(dir $@)
+	$(CC) $(ASMFLAGS) -o $@ $<
+
+build/arduino/%.c.o: $(ARDUINO_CORES_BASE)/%.c
+	mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) $(INCLUDE_ARGS) -c -o $@ $<
+
+build/arduino/%.cpp.o: $(ARDUINO_CORES_BASE)/%.cpp
+	mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) $(INCLUDE_ARGS) -c -o $@ $<
+
+build/arduino.ar: $(ARDUINO_BUILD_OBJS)
+	mkdir -p $(dir $@)
+	$(AR) cru $@ $^
+
+build/%.c.o: %.c $(HEADERS)
+	mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) $(INCLUDE_ARGS) -c -o $@ $<
+
+build/%.cpp.o: %.cpp $(HEADERS)
+	mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) $(INCLUDE_ARGS) -c -o $@ $<
+
+build/rom.elf: $(OBJS) build/arduino.ar
+	mkdir -p $(dir $@)
+	$(CC) $(LDFLAGS) $(LIBDIR_ARGS) -T eagle.flash.1m256.rboot.ld -o $@ \
+		-Wl,--start-group $^ $(LIB_ARGS) -Wl,--end-group
+
+build/rom.bin: build/rom.elf
+	mkdir -p $(dir $@)
+	$(ESPTOOL2) -quiet -bin -boot2 $< $@ .text .data .rodata
+
+clean:
+	rm -rvf build
